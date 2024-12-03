@@ -42,6 +42,10 @@ class DefaultExtension extends MProvider {
 		};
 	}
 	
+	get supportsLatest() {
+		return false;
+	}
+	
 	async search(query, page, filters) {
 		const baseUrl = this.source.baseUrl;
 		const res = await this.client.get(`${baseUrl}/page/${page}/?s=${query}`);
@@ -111,5 +115,16 @@ class DefaultExtension extends MProvider {
 			}
 		}
 		return list;
+	}
+	
+	async getVideoList(url) {
+		throw new Error("getVideoList not implemented");
+	}
+	
+	getFilterList() {
+		throw new Error("getFilterList not implemented");
+	}
+	getSourcePreferences() {
+		throw new Error("getSourcePreferences not implemented");
 	}
 }
