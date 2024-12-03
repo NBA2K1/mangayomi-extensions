@@ -1,7 +1,7 @@
 const mangayomiSources = [{
 	"name": "AnimeToast",
 	"lang": "de",
-	"baseUrl": "https://animetoast.cc",
+	"baseUrl": "https://www.animetoast.cc",
 	"apiUrl": "",
 	"iconUrl": "https://www.animetoast.cc/wp-content/uploads/2018/03/toastfavi-300x300.png",
 	"typeSource": "single",
@@ -90,14 +90,15 @@ class DefaultExtension extends MProvider {
 	}
 	
 	async episodeFromElement(element, categoryTag) {
+		const list = [];
 		if (categoryTag.includes("Serie")) {
 			const episodeElements = element.selectFirst("#multi_link_tab0")?.attr("id") != null
 				? element.select("#multi_link_tab0 a")
 				: element.select("#multi_link_tab1 a");
-			const list = [];
 			for (const episodeElement of episodeElements) {
 				const name = episodeElement.text.trim();
-				const url = episodeElement.attr("href");
+				const link = episodeElement.attr("href");
+				const url = link.startsWith(this.source.baseUrl) ? link.substring(this.source.baseUrl.length) : link;
 				if (name && url) {
 					list.push({ name, url });
 				}
