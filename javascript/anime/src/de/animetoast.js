@@ -104,8 +104,8 @@ class DefaultExtension extends MProvider {
 				}
 			}
 		} else {
-			const name = document.selectFirst("h1.light-title").text
-			const url = baseUrl + url;
+			const name = element.selectFirst("h1.light-title").text
+			const url = element.selectFirst("#multi_link_tab0 a").attr("href");
 			if (name && url) {
 				list.push({ name, url });
 			}
