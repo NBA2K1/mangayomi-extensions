@@ -124,7 +124,30 @@ class DefaultExtension extends MProvider {
 	getFilterList() {
 		throw new Error("getFilterList not implemented");
 	}
+	
 	getSourcePreferences() {
-		throw new Error("getSourcePreferences not implemented");
+		const hosts = ['VOE', 'DoodStream', 'Filemoon', 'Mp4Upload'];
+		return [
+            {
+                key: 'preferred_hoster',
+                listPreference: {
+                    title: 'Standard-Hoster',
+                    summary: '',
+                    valueIndex: 0,
+                    entries: hosts,
+                    entryValues: hosts
+                }
+            },
+			{
+                key: "hoster_selection",
+                multiSelectListPreference: {
+                    title: "Hoster auswählen",
+                    summary: "",
+                    entries: hosts,
+                    entryValues: hosts,
+                    values: hosts
+                }
+            }
+		];
 	}
 }
