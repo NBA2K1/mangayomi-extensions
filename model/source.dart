@@ -116,6 +116,6 @@ class Source {
   }
 }
 
-const branchName = "main";
+const branchName = "my-repo";
 
 enum ItemType { manga, anime, novel }

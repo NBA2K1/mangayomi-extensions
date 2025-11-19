@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
-    "version": "0.3.8",
+    "version": "0.3.9",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/de/aniworld.js"
@@ -146,6 +146,7 @@ class DefaultExtension extends MProvider {
         const titleAnchor = element.selectFirst("td.seasonEpisodeTitle a");
         const episodeSpan = titleAnchor.selectFirst("span");
         const url = titleAnchor.attr("href");
+        const dateUpload = await this.getUploadDateFromEpisode(url);
         const episodeSeasonId = element.attr("data-episode-season-id");
         let episode = this.cleanHtmlString(episodeSpan.text);
         let name = "";
@@ -155,7 +156,47 @@ class DefaultExtension extends MProvider {
             const seasonMatch = url.match(/staffel-(\d+)\/episode/);
             name = `Staffel ${seasonMatch[1]} Folge ${episodeSeasonId} : ${episode}`;
         }
-        return name && url ? { name, url } : {};
+        return name && url ? { name, url, dateUpload } : {};
+    }
+    async getUploadDateFromEpisode(url) {
+        const baseUrl = this.source.baseUrl;
+        const res = await this.client.get(baseUrl + url);
+        const getLastSundayOfMonth = (year, month) => {
+            const lastDay = this.createDate(year, month, 0);
+            const lastSunday = lastDay.getDate() - lastDay.getDay();
+            return this.createDate(year, month - 1, lastSunday);
+        };
+        const document = new Document(res.body);
+        const dateString = document.selectFirst('strong[style="color: white;"]').text;
+        const dateTimePart = dateString.split(", ")[1];
+        const [date, time] = dateTimePart.split(" ");
+        const [day, month, year] = date.split(".");
+        const [hours, minutes] = time.split(":");
+        const dayInt = parseInt(day);
+        const monthInt = parseInt(month);
+        const yearInt = parseInt(year);
+        const hoursInt = parseInt(hours);
+        const minutesInt = parseInt(minutes);
+        const lastSundayOfMarch = getLastSundayOfMonth(yearInt, 3);
+        const lastSundayOfOctober = getLastSundayOfMonth(yearInt, 10);
+        const jsDate = this.createDate(yearInt, monthInt - 1, dayInt, hoursInt, minutesInt);
+        // If Date between lastSundayOfMarch & lastSundayOfOctober -> CEST (MESZ)
+        const isInDST = jsDate >= lastSundayOfMarch && jsDate < lastSundayOfOctober;
+        let timeZoneOffset = isInDST ? 0 : 1;
+        // If it's in CEST, subtract 1 hour from UTC (to get local time in CEST)
+        const correctedTime = this.createDate(jsDate.getTime() + (timeZoneOffset - 1) * 60 * 60 * 1000);
+        return String(correctedTime.valueOf()); // dateUpload is a string containing date expressed in millisecondsSinceEpoch.
+    }
+
+    createDate(yearOrNum, month, day) {
+        if (yearOrNum && month && day) {
+            return day < 1 ? new Date(Math.max(new Date().getFullYear(), yearOrNum), Math.max(0, month)) :
+                new Date(Math.max(new Date().getFullYear(), yearOrNum), Math.max(0, month), day);
+        } else if (yearOrNum) {
+            return new Date(yearOrNum);
+        } else {
+            return new Date();
+        }
     }
 
     async getVideoList(url) {
@@ -278,9 +319,9 @@ class DefaultExtension extends MProvider {
 }
 
 /***************************************************************************************************
-* 
+*
 *   mangayomi-js-helpers v1.2
-*       
+*
 *   # Video Extractors
 *       - vidGuardExtractor
 *       - doodExtractor
@@ -293,7 +334,7 @@ class DefaultExtension extends MProvider {
 *       - speedfilesExtractor
 *       - luluvdoExtractor
 *       - burstcloudExtractor (not working, see description)
-*   
+*
 *   # Video Extractor Wrappers
 *       - streamWishExtractor
 *       - voeExtractor
@@ -301,22 +342,22 @@ class DefaultExtension extends MProvider {
 *       - yourUploadExtractor
 *       - streamTapeExtractor
 *       - sendVidExtractor
-*   
+*
 *   # Video Extractor helpers
 *       - extractAny
-*   
+*
 *   # Playlist Extractors
 *       - m3u8Extractor
 *       - jwplayerExtractor
-*   
+*
 *   # Extension Helpers
 *       - sortVideos()
-*   
+*
 *   # Uint8Array
 *       - Uint8Array.fromBase64()
 *       - Uint8Array.prototype.toBase64()
 *       - Uint8Array.prototype.decode()
-*   
+*
 *   # String
 *       - String.prototype.encode()
 *       - String.decode()
@@ -327,7 +368,7 @@ class DefaultExtension extends MProvider {
 *   # Encode/Decode Functions
 *       - decodeUTF8
 *       - encodeUTF8
-*   
+*
 *   # Url
 *       - absUrl()
 *
