@@ -69,13 +69,21 @@ class DefaultExtension extends MProvider {
     async search(query, page, filters) {
         const baseUrl = this.source.baseUrl;
         const res = await this.client.get(`${baseUrl}/serien`);
-        const elements = new Document(res.body).select("#seriesContainer > div > ul > li > a").filter(e => e.attr("title").toLowerCase().includes(query.toLowerCase()));
+        const elements = new Document(res.body)
+            .select("ul.series-list li.series-item")
+            .filter(e => e.attr("data-search").trim().includes(query.toLowerCase()));
         const list = [];
         for (const element of elements) {
-            const name = element.text;
-            const link = element.attr("href");
-            const img = new Document((await this.client.get(baseUrl + link)).body).selectFirst("div.seriesCoverBox img").attr("data-src");
-            const imageUrl = baseUrl + img;
+            const linkElement = element.selectFirst("a");
+            const name = linkElement.text;
+            const link = linkElement.attr("href");
+            const showDoc = new Document((await this.client.get(baseUrl + link)).body);
+            const img = showDoc.selectFirst("div.col-3.col-md-3.col-lg-2.d-none.d-md-block img");
+            let imageUrl = img.attr("data-src");
+            if (!imageUrl || imageUrl.trim() === "") {
+                imageUrl = img.attr("src");
+            }
+            imageUrl = baseUrl + imageUrl;
             list.push({ name, imageUrl, link });
         }
         return {
