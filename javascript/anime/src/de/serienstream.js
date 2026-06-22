@@ -21,12 +21,17 @@ class DefaultExtension extends MProvider {
     async getPopular(page) {
         const baseUrl = this.source.baseUrl;
         const res = await this.client.get(`${baseUrl}/beliebte-serien`);
-        const elements = new Document(res.body).select("div.seriesListContainer div");
+        const elements = new Document(res.body).select("div.mb-5:nth-child(4) > div:nth-child(2) div");
         const list = [];
         for (const element of elements) {
             const linkElement = element.selectFirst("a");
-            const name = element.selectFirst("h3").text;
-            const imageUrl = baseUrl + linkElement.selectFirst("img").attr("data-src");
+            const img = linkElement.selectFirst("img");
+            const name = img.attr("alt");
+            let imageUrl = img.attr("data-src");
+            if (!imageUrl || imageUrl.trim() === "") {
+                imageUrl = img.attr("src");
+            }
+            imageUrl = baseUrl + imageUrl;
             const link = linkElement.attr("href");
             list.push({ name, imageUrl, link });
         }
