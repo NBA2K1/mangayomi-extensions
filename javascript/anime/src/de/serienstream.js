@@ -287,17 +287,17 @@ class DefaultExtension extends MProvider {
         const hostFilter = preferences.get("host_filter");
         const langFilter = preferences.get("lang_filter");
 
-        const redirectsElements = document.select("ul.row li");
+        const redirectsElements = document.select("#episode-links button");
         const dartClient = new Client({ 'useDartHttpClient': true, "followRedirects": false });
 
         for (const element of redirectsElements) {
-            const langkey = element.attr("data-lang-key");
+            const langkey = element.attr("data-language-id");
             const lang = (langkey == 1 || langkey == 3) ? 'Deutscher' : 'Englischer';
             const type = (langkey == 1) ? 'Dub' : 'Sub';
-            const host = element.selectFirst("a h4").text;
+            const host = element.selectFirst("span").text;
 
             if (hostFilter.includes(host) && langFilter.includes(`${lang} ${type}`)) {
-                const redirect = baseUrl + element.selectFirst("a.watchEpisode").attr("href");
+                const redirect = baseUrl + element.attr("data-play-url");
                 promises.push((async (redirect, lang, type, host) => {
                     const location = (await dartClient.get(redirect)).headers.location;
                     return await extractAny(location, host.toLowerCase(), lang, type, host, {'Referer': this.source.baseUrl});
