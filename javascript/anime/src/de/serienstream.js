@@ -17,6 +17,7 @@ class DefaultExtension extends MProvider {
     constructor () {
         super();
         this.client = new Client();
+        this.cache = new Map();
     }
     async getPopular(page) {
         const baseUrl = this.source.baseUrl;
@@ -132,25 +133,22 @@ class DefaultExtension extends MProvider {
         return Promise.all(ret);
     }
     async getDetail(url) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(baseUrl + url);
-        const document = new Document(res.body);
-        const imageUrl = baseUrl +
-            document.selectFirst("div.seriesCoverBox img").attr("data-src");
-        const name = document.selectFirst("div.series-title h1 span").text;
-        const genre = document.select("div.genres ul li").map(e => e.text).filter(text => !/^\+\s\d+$/.test(text));
-        const description = this.cleanHtmlString(document.selectFirst("p.seri_des").attr("data-full-description"));
-        const produzent = document.select("div.cast li")
-            .filter(e => e.outerHtml.includes("Produzent:"));
+        const document = await this.getSite(url);
+        const img = document.selectFirst("div.col-3.col-md-3.col-lg-2.d-none.d-md-block img");
+        let imageUrl = img.attr("data-src");
+        if (!imageUrl || imageUrl.trim() === "") {
+            imageUrl = img.attr("src");
+        }
+        imageUrl = this.source.baseUrl + imageUrl;
+        const name = document.selectFirst("h1.h2.mb-1.fw-bold").text.trim();
+        const genre = document.select("li.series-group:has(strong:contains(Genre)) a").map(e => e.text);
+        const description = document.selectFirst("span.description-text").text;
+        const produzent = document.select("li.series-group:has(strong:contains(Produzent)) a");
         let author = "";
         if (produzent.length > 0) {
-            author = produzent[0]
-              .select("li")
-              .map((e) => e.text)
-              .filter((text) => !/^\s\&\s\d+\sweitere$/.test(text))
-              .join(", ");
+            author = produzent.map(e => e.text).join(", ");
         }
-        const seasonsElements = document.select("#stream > ul:nth-child(1) > li > a");
+        const seasonsElements = document.select("#season-nav > ul > li > a");
         // Use asyncPool to limit concurrency while processing seasons
         const episodesArrays = await this.asyncPool(2, seasonsElements, element => this.parseEpisodesFromSeries(element));
         // Flatten the resulting arrays and reverse the order
@@ -159,20 +157,24 @@ class DefaultExtension extends MProvider {
     }
     async parseEpisodesFromSeries(element) {
         const seasonId = element.getHref;
-        const res = await this.client.get(this.source.baseUrl + seasonId);
-        const episodeElements = new Document(res.body).select("table.seasonEpisodesList tbody tr");
+        const document = await this.getSite(seasonId);
+        const episodeElements = document.select("table.episode-table tbody tr");
         // Use asyncPool to limit concurrency while processing episodes of a season
         return await this.asyncPool(13, episodeElements, e => this.episodeFromElement(e));
     }
     async episodeFromElement(element) {
-        const titleAnchor = element.selectFirst("td.seasonEpisodeTitle a");
-        const episodeSpan = titleAnchor.selectFirst("span");
-        const url = titleAnchor.attr("href");
+        let episode = element.selectFirst("strong").text.trim();
+        if (episode === "") {
+            episode = element.selectFirst("span").text.trim();
+        }
+        episode = this.cleanHtmlString(episode);
+        const match = element.attr("onclick").match(/'([^']+)'/);
+        const url = match ? match[1] : null;
         const dateUpload = await this.getUploadDateFromEpisode(url);
         const episodeSeasonId = element.attr("data-episode-season-id");
-        let episode = this.cleanHtmlString(episodeSpan.text);
+        const episodeSeasonId = element.selectFirst("th").text;
         let name = "";
-        if (url.includes("/film")) {
+        if (url.includes("/staffel-0")) {
             name = `Film ${episodeSeasonId} : ${episode}`;
         } else {
             const seasonMatch = url.match(/staffel-(\d+)\/episode/);
@@ -181,14 +183,13 @@ class DefaultExtension extends MProvider {
         return name && url ? { name, url, dateUpload } : {};
     }
     async getUploadDateFromEpisode(url) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(baseUrl + url);
-        const document = new Document(res.body);
-        const dateString = document.selectFirst('strong[style="color: white;"]').text; // Dienstag, 16.12.2025 19:45
-        const cleanDateString = dateString.split(", ")[1]; // 16.12.2025 19:45
-        const [date, time] = cleanDateString.split(" "); // Split into "16.12.2025" and "19:45"
-        const [day, month, year] = date.split("."); // Parse day, month, year
-        const [hour, minute] = time.split(":"); // Parse hour and minute
+        const document = await this.getSite(url);
+        const date = document.selectFirst('span.flex-grow-1 > span');
+        let dateString = date.attr("title").trim(); // Dec 6, 2020 19:46 Uhr
+        if (dateString === "") {
+            dateString = date.text.trim(); // Veröffentlicht am December 6, 2020
+        }
+        const { year, month, day, hour, minute } = this.parseEpisodeDate(dateString);
         // Build a UTC timestamp from the parsed components.
         // This avoids accidental timezone shifts from the local environment.
         const utcBase = new Date(Date.UTC(
@@ -203,9 +204,51 @@ class DefaultExtension extends MProvider {
         const offsetHours = this.isGermanDST(utcBase) ? 2 : 1;
         // Convert the UTC timestamp into the actual German local instant.
         // Subtracting the offset gives the correct epoch milliseconds.
-        const germanInstant =
-            utcBase.getTime() - offsetHours * 60 * 60 * 1000;
+        const germanInstant = utcBase.getTime() - offsetHours * 60 * 60 * 1000;
         return germanInstant.toString(); // dateUpload is a string containing date expressed in millisecondsSinceEpoch.
+    }
+
+    async getSite(url) {
+        if (this.cache.has(url)) {
+            return this.cache.get(url);
+        }
+        const res = await this.client.get(this.source.baseUrl + url);
+        const doc = new Document(res.body);
+        this.cache.set(url, doc);
+        return doc;
+    }
+
+    parseEpisodeDate(dateString) {
+        // Case 1: "Dec 6, 2020 19:46 Uhr"
+        if (/Uhr$/.test(dateString)) {
+            const cleaned = dateString.replace("Uhr", "").trim(); // "Dec 6, 2020 19:46"
+            const [monthName, day, year, time] = cleaned.split(/[\s,]+/); // ["Dec", "6", "2020", "19:46"]
+            const [hour, minute] = time.split(":"); // hour = "19", minute = "46"
+            // new Date("Dec 1, 2000").getMonth() -> 11 + 1 = 12
+            const month = new Date(`${monthName} 1, 2000`).getMonth() + 1;
+            if (Number(year) <= 0) {
+                return { year: 1970, month: 1, day: 1, hour: "00", minute: "00" };
+            }
+
+            return { year, month, day, hour, minute };
+        }
+
+        // Case 2: "Veröffentlicht am December 6, 2020"
+        if (/Veröffentlicht am/i.test(dateString)) {
+            const match = dateString.match(/([A-Za-z]+)\s+(\d{1,2}),\s*(\d{4})/); // ["December 6, 2020", "December", "6", "2020"]
+            if (!match) throw new Error("Unrecognized English long date");
+
+            const [, monthName, day, year] = match; // ["December", "6", "2020"]
+            // new Date("Dec 1, 2000").getMonth() -> 11 + 1 = 12
+            const month = new Date(`${monthName} 1, 2000`).getMonth() + 1;
+            if (Number(year) <= 0) {
+                return { year: 1970, month: 1, day: 1, hour: "00", minute: "00" };
+            }
+            // No time -> assume midnight
+            return { year, month, day, hour: "00", minute: "00" };
+        }
+
+        throw new Error("Unknown date format: " + dateString);
     }
 
     isGermanDST(dateUTC) {
