@@ -143,12 +143,15 @@ class DefaultExtension extends MProvider {
     }
     async episodeFromElement(element) {
         const titleAnchor = element.selectFirst("td.seasonEpisodeTitle a");
-        const episodeSpan = titleAnchor.selectFirst("span");
+        let episode = titleAnchor.selectFirst("strong").text.trim();
+        if (episode === "") {
+            episode = titleAnchor.selectFirst("span").text.trim();
+        }
+        episode = this.cleanHtmlString(episode);
         const url = titleAnchor.attr("href");
         const dateUpload = await this.getUploadDateFromEpisode(url);
         const description = await this.getDescriptionFromEpisode(url);
         const episodeSeasonId = element.attr("data-episode-season-id");
-        let episode = this.cleanHtmlString(episodeSpan.text);
         let name = "";
         if (url.includes("/film")) {
             name = `Film ${episodeSeasonId} : ${episode}`;
