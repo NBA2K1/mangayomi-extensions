@@ -3,11 +3,11 @@ const mangayomiSources = [{
     "lang": "de",
     "baseUrl": "https://aniworld.to",
     "apiUrl": "",
-    "iconUrl": "https://raw.githubusercontent.com/m2k3a/mangayomi-extensions/main/javascript/icon/de.aniworld.png",
+    "iconUrl": "https://raw.githubusercontent.com/NBA2K1/mangayomi-extensions/main/javascript/icon/de.aniworld.png",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
-    "version": "0.4.1",
+    "version": "0.4.2",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/de/aniworld.js"
@@ -17,17 +17,17 @@ class DefaultExtension extends MProvider {
     constructor() {
         super();
         this.client = new Client();
+        this.cache = new Map();
     }
     async getPopular(page) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(`${baseUrl}/beliebte-animes`);
-        const elements = new Document(res.body).select("div.seriesListContainer div");
+        const elements = (await this.getSite("/beliebte-animes"))
+            .select("div.seriesListContainer div");
         const list = [];
         for (const element of elements) {
             const linkElement = element.selectFirst("a");
             const name = element.selectFirst("h3").text;
-            const imageUrl = baseUrl + linkElement.selectFirst("img").attr("data-src");
-            const link = linkElement.attr("href");
+            const imageUrl = this.source.baseUrl + linkElement.selectFirst("img").attr("data-src");
+            const link = linkElement.attr("href") + "/staffel-1";
             list.push({ name, imageUrl, link });
         }
         return {
@@ -36,15 +36,14 @@ class DefaultExtension extends MProvider {
         }
     }
     async getLatestUpdates(page) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(`${baseUrl}/neu`);
-        const elements = new Document(res.body).select("div.seriesListContainer div");
+        const elements = (await this.getSite("/neu"))
+            .select("div.seriesListContainer div");
         const list = [];
         for (const element of elements) {
             const linkElement = element.selectFirst("a");
             const name = element.selectFirst("h3").text;
-            const imageUrl = baseUrl + linkElement.selectFirst("img").attr("data-src");
-            const link = linkElement.attr("href");
+            const imageUrl = this.source.baseUrl + linkElement.selectFirst("img").attr("data-src");
+            const link = linkElement.attr("href") + "/staffel-1";
             list.push({ name, imageUrl, link });
         }
         return {
@@ -53,15 +52,17 @@ class DefaultExtension extends MProvider {
         }
     }
     async search(query, page, filters) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(`${baseUrl}/animes`);
-        const elements = new Document(res.body).select("#seriesContainer > div > ul > li > a").filter(e => e.attr("title").toLowerCase().includes(query.toLowerCase()));
+        const elements = (await this.getSite("/animes"))
+            .select("#seriesContainer > div > ul > li > a")
+            .filter(e => e.attr("title").toLowerCase()
+            .includes(query.toLowerCase()));
         const list = [];
         for (const element of elements) {
             const name = element.text;
-            const link = element.attr("href");
-            const img = new Document((await this.client.get(baseUrl + link)).body).selectFirst("div.seriesCoverBox img").attr("data-src");
-            const imageUrl = baseUrl + img;
+            const link = element.attr("href") + "/staffel-1";;
+            const showDoc = await this.getSite(link);
+            const img = showDoc.selectFirst("div.seriesCoverBox img").attr("data-src");
+            const imageUrl = this.source.baseUrl + img;
             list.push({ name, imageUrl, link });
         }
         return {
@@ -110,10 +111,8 @@ class DefaultExtension extends MProvider {
         return Promise.all(ret);
     }
     async getDetail(url) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(baseUrl + url);
-        const document = new Document(res.body);
-        const imageUrl = baseUrl +
+        const document = await this.getSite(url);
+        const imageUrl = this.source.baseUrl +
             document.selectFirst("div.seriesCoverBox img").attr("data-src");
         const name = document.selectFirst("div.series-title h1 span").text;
         const genre = document.select("div.genres ul li").map(e => e.text).filter(text => !/^\+\s\d+$/.test(text));
@@ -137,8 +136,8 @@ class DefaultExtension extends MProvider {
     }
     async parseEpisodesFromSeries(element) {
         const seasonId = element.getHref;
-        const res = await this.client.get(this.source.baseUrl + seasonId);
-        const episodeElements = new Document(res.body).select("table.seasonEpisodesList tbody tr");
+        const res = await this.getSite(seasonId);
+        const episodeElements = res.select("table.seasonEpisodesList tbody tr");
         // Use asyncPool to limit concurrency while processing episodes of a season
         return await this.asyncPool(13, episodeElements, e => this.episodeFromElement(e));
     }
@@ -147,6 +146,7 @@ class DefaultExtension extends MProvider {
         const episodeSpan = titleAnchor.selectFirst("span");
         const url = titleAnchor.attr("href");
         const dateUpload = await this.getUploadDateFromEpisode(url);
+        const description = await this.getDescriptionFromEpisode(url);
         const episodeSeasonId = element.attr("data-episode-season-id");
         let episode = this.cleanHtmlString(episodeSpan.text);
         let name = "";
@@ -156,12 +156,10 @@ class DefaultExtension extends MProvider {
             const seasonMatch = url.match(/staffel-(\d+)\/episode/);
             name = `Staffel ${seasonMatch[1]} Folge ${episodeSeasonId} : ${episode}`;
         }
-        return name && url ? { name, url, dateUpload } : {};
+        return name && url ? { name, url, dateUpload, description } : {};
     }
     async getUploadDateFromEpisode(url) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(baseUrl + url);
-        const document = new Document(res.body);
+        const document = await this.getSite(url);
         const dateString = document.selectFirst('strong[style="color: white;"]').text; // Dienstag, 16.12.2025 19:45
         const cleanDateString = dateString.split(", ")[1]; // 16.12.2025 19:45
         const [date, time] = cleanDateString.split(" "); // Split into "16.12.2025" and "19:45"
@@ -184,6 +182,22 @@ class DefaultExtension extends MProvider {
         const germanInstant =
             utcBase.getTime() - offsetHours * 60 * 60 * 1000;
         return germanInstant.toString(); // dateUpload is a string containing date expressed in millisecondsSinceEpoch.
+    }
+
+    async getDescriptionFromEpisode(url) {
+        const document = await this.getSite(url);
+        const description = document.selectFirst("p.descriptionSpoiler").text;
+        return description.trim();
+    }
+
+    async getSite(url) {
+        if (this.cache.has(url)) {
+            return this.cache.get(url);
+        }
+        const res = await this.client.get(this.source.baseUrl + url);
+        const doc = new Document(res.body);
+        this.cache.set(url, doc);
+        return doc;
     }
 
     isGermanDST(dateUTC) {
