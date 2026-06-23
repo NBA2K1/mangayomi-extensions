@@ -171,7 +171,7 @@ class DefaultExtension extends MProvider {
         const match = element.attr("onclick").match(/'([^']+)'/);
         const url = match ? match[1] : null;
         const dateUpload = await this.getUploadDateFromEpisode(url);
-        const episodeSeasonId = element.attr("data-episode-season-id");
+        const description = await this.getDescriptionFromEpisode(url);
         const episodeSeasonId = element.selectFirst("th").text;
         let name = "";
         if (url.includes("/staffel-0")) {
@@ -180,7 +180,7 @@ class DefaultExtension extends MProvider {
             const seasonMatch = url.match(/staffel-(\d+)\/episode/);
             name = `Staffel ${seasonMatch[1]} Folge ${episodeSeasonId} : ${episode}`;
         }
-        return name && url ? { name, url, dateUpload } : {};
+        return name && url ? { name, url, dateUpload, description } : {};
     }
     async getUploadDateFromEpisode(url) {
         const document = await this.getSite(url);
@@ -206,6 +206,12 @@ class DefaultExtension extends MProvider {
         // Subtracting the offset gives the correct epoch milliseconds.
         const germanInstant = utcBase.getTime() - offsetHours * 60 * 60 * 1000;
         return germanInstant.toString(); // dateUpload is a string containing date expressed in millisecondsSinceEpoch.
+    }
+
+    async getDescriptionFromEpisode(url) {
+        const document = await this.getSite(url);
+        const description = document.selectFirst("div.mt-2 > div.lh-lg.mb-3").text;
+        return description.trim();
     }
 
     async getSite(url) {
