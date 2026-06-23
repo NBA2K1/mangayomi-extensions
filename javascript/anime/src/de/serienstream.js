@@ -32,7 +32,7 @@ class DefaultExtension extends MProvider {
                 imageUrl = img.attr("src");
             }
             imageUrl = this.source.baseUrl + imageUrl;
-            const link = linkElement.attr("href");
+            const link = linkElement.attr("href") + "/staffel-1";
             list.push({ name, imageUrl, link });
         }
         return {
@@ -57,7 +57,7 @@ class DefaultExtension extends MProvider {
                 imageUrl = img.attr("src");
             }
             imageUrl = this.source.baseUrl + imageUrl;
-            const link = linkElement.attr("href");
+            const link = linkElement.attr("href") + "/staffel-1";
             list.push({ name, imageUrl, link });
         }
         return {
@@ -73,7 +73,7 @@ class DefaultExtension extends MProvider {
         for (const element of elements) {
             const linkElement = element.selectFirst("a");
             const name = linkElement.text;
-            const link = linkElement.attr("href");
+            const link = linkElement.attr("href") + "/staffel-1";
             const showDoc = await this.getSite(link);
             const img = showDoc.selectFirst("div.col-3.col-md-3.col-lg-2.d-none.d-md-block img");
             let imageUrl = img.attr("data-src");
