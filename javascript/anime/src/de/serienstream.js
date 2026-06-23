@@ -20,9 +20,8 @@ class DefaultExtension extends MProvider {
         this.cache = new Map();
     }
     async getPopular(page) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(`${baseUrl}/beliebte-serien`);
-        const elements = new Document(res.body).select("div.mb-5:nth-child(4) > div:nth-child(2) div");
+        const document = await this.getSite("/beliebte-serien");
+        const elements = document.select("div.mb-5:nth-child(4) > div:nth-child(2) div");
         const list = [];
         for (const element of elements) {
             const linkElement = element.selectFirst("a");
@@ -32,7 +31,7 @@ class DefaultExtension extends MProvider {
             if (!imageUrl || imageUrl.trim() === "") {
                 imageUrl = img.attr("src");
             }
-            imageUrl = baseUrl + imageUrl;
+            imageUrl = this.source.baseUrl + imageUrl;
             const link = linkElement.attr("href");
             list.push({ name, imageUrl, link });
         }
@@ -42,9 +41,8 @@ class DefaultExtension extends MProvider {
         }
     }
     async getLatestUpdates(page) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(`${baseUrl}/beliebte-serien`);
-        const elements = new Document(res.body).select("div.mb-5:nth-child(3) > div:nth-child(2) div");
+        const document = await this.getSite("/beliebte-serien");
+        const elements = document.select("div.mb-5:nth-child(3) > div:nth-child(2) div");
         const list = [];
         const seen = new Set();
         for (const element of elements) {
@@ -58,7 +56,7 @@ class DefaultExtension extends MProvider {
             if (!imageUrl || imageUrl.trim() === "") {
                 imageUrl = img.attr("src");
             }
-            imageUrl = baseUrl + imageUrl;
+            imageUrl = this.source.baseUrl + imageUrl;
             const link = linkElement.attr("href");
             list.push({ name, imageUrl, link });
         }
@@ -68,9 +66,7 @@ class DefaultExtension extends MProvider {
         }
     }
     async search(query, page, filters) {
-        const baseUrl = this.source.baseUrl;
-        const res = await this.client.get(`${baseUrl}/serien`);
-        const elements = new Document(res.body)
+        const elements = (await this.getSite("/serien"))
             .select("ul.series-list li.series-item")
             .filter(e => e.attr("data-search").trim().includes(query.toLowerCase()));
         const list = [];
@@ -78,13 +74,13 @@ class DefaultExtension extends MProvider {
             const linkElement = element.selectFirst("a");
             const name = linkElement.text;
             const link = linkElement.attr("href");
-            const showDoc = new Document((await this.client.get(baseUrl + link)).body);
+            const showDoc = await this.getSite(link);
             const img = showDoc.selectFirst("div.col-3.col-md-3.col-lg-2.d-none.d-md-block img");
             let imageUrl = img.attr("data-src");
             if (!imageUrl || imageUrl.trim() === "") {
                 imageUrl = img.attr("src");
             }
-            imageUrl = baseUrl + imageUrl;
+            imageUrl = this.source.baseUrl + imageUrl;
             list.push({ name, imageUrl, link });
         }
         return {
