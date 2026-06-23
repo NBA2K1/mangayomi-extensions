@@ -7,7 +7,7 @@ const mangayomiSources = [{
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
-    "version": "0.4.2",
+    "version": "0.4.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/de/aniworld.js"
@@ -52,10 +52,14 @@ class DefaultExtension extends MProvider {
         }
     }
     async search(query, page, filters) {
+        const q = query.toLowerCase();
         const elements = (await this.getSite("/animes"))
             .select("#seriesContainer > div > ul > li > a")
-            .filter(e => e.attr("title").toLowerCase()
-            .includes(query.toLowerCase()));
+            .filter(e => {
+                const title = e.text.toLowerCase();
+                const alt = e.attr("data-alternative-title")?.toLowerCase() ?? "";
+                return title.includes(q) || alt.includes(q);
+            });
         const list = [];
         for (const element of elements) {
             const name = element.text;
