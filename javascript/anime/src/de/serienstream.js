@@ -1,16 +1,17 @@
 const mangayomiSources = [{
     "name": "SerienStream",
     "lang": "de",
-    "baseUrl": "https://s.to",
+    "baseUrl": "https://serienstream.to",
     "apiUrl": "",
-    "iconUrl": "https://s.to/favicon.ico",
+    "iconUrl": "https://serienstream.to/favicon.ico",
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
-    "version": "0.1.1",
+    "version": "0.1.2",
     "dateFormat": "",
     "dateFormatLocale": "",
-    "pkgPath": "anime/src/de/serienstream.js"
+    "pkgPath": "anime/src/de/serienstream.js",
+    "notes": "Funktioniert derzeit nicht!"
 }];
 
 class DefaultExtension extends MProvider {
@@ -19,6 +20,16 @@ class DefaultExtension extends MProvider {
         this.client = new Client();
         this.cache = new Map();
     }
+    _trimTrailingSlash(url) {
+		return String(url || "")
+			.trim()
+			.replace(/\/+$/, "");
+	}
+    get siteBase() {
+		return this._trimTrailingSlash(
+			new SharedPreferences().get("overrideSiteUrl") || this.source.baseUrl,
+		);
+	}
     async getPopular(page) {
         const document = await this.getSite("/beliebte-serien");
         const elements = document.select("div.mb-5:nth-child(4) > div:nth-child(2) div");
@@ -31,7 +42,7 @@ class DefaultExtension extends MProvider {
             if (!imageUrl || imageUrl.trim() === "") {
                 imageUrl = img.attr("src");
             }
-            imageUrl = this.source.baseUrl + imageUrl;
+            imageUrl = this.siteBase + imageUrl;
             const link = linkElement.attr("href") + "/staffel-1";
             list.push({ name, imageUrl, link });
         }
@@ -56,7 +67,7 @@ class DefaultExtension extends MProvider {
             if (!imageUrl || imageUrl.trim() === "") {
                 imageUrl = img.attr("src");
             }
-            imageUrl = this.source.baseUrl + imageUrl;
+            imageUrl = this.siteBase + imageUrl;
             const link = linkElement.attr("href") + "/staffel-1";
             list.push({ name, imageUrl, link });
         }
@@ -80,7 +91,7 @@ class DefaultExtension extends MProvider {
             if (!imageUrl || imageUrl.trim() === "") {
                 imageUrl = img.attr("src");
             }
-            imageUrl = this.source.baseUrl + imageUrl;
+            imageUrl = this.siteBase + imageUrl;
             list.push({ name, imageUrl, link });
         }
         return {
@@ -135,7 +146,7 @@ class DefaultExtension extends MProvider {
         if (!imageUrl || imageUrl.trim() === "") {
             imageUrl = img.attr("src");
         }
-        imageUrl = this.source.baseUrl + imageUrl;
+        imageUrl = this.siteBase + imageUrl;
         const name = document.selectFirst("h1.h2.mb-1.fw-bold").text.trim();
         const genre = document.select("li.series-group:has(strong:contains(Genre)) a").map(e => e.text);
         const description = document.selectFirst("span.description-text").text;
@@ -143,6 +154,7 @@ class DefaultExtension extends MProvider {
         let author = "";
         if (produzent.length > 0) {
             author = produzent.map(e => e.text).join(", ");
+            author = this.cleanHtmlString(author);
         }
         const seasonsElements = document.select("#season-nav > ul > li > a");
         // Use asyncPool to limit concurrency while processing seasons
@@ -214,7 +226,7 @@ class DefaultExtension extends MProvider {
         if (this.cache.has(url)) {
             return this.cache.get(url);
         }
-        const res = await this.client.get(this.source.baseUrl + url);
+        const res = await this.client.get(this.siteBase + url);
         const doc = new Document(res.body);
         this.cache.set(url, doc);
         return doc;
@@ -272,7 +284,7 @@ class DefaultExtension extends MProvider {
     }
 
     async getVideoList(url) {
-        const baseUrl = this.source.baseUrl;
+        const baseUrl = this.siteBase;
         const res = await this.client.get(baseUrl + url, {
             'Accept': '*/*',
             'Referer': baseUrl + url,
@@ -300,7 +312,7 @@ class DefaultExtension extends MProvider {
                 const redirect = baseUrl + element.attr("data-play-url");
                 promises.push((async (redirect, lang, type, host) => {
                     const location = (await dartClient.get(redirect)).headers.location;
-                    return await extractAny(location, host.toLowerCase(), lang, type, host, {'Referer': this.source.baseUrl});
+                    return await extractAny(location, host.toLowerCase(), lang, type, host, {'Referer': this.siteBase});
                 })(redirect, lang, type, host));
             }
         }
@@ -385,7 +397,17 @@ class DefaultExtension extends MProvider {
                     entryValues: hosts,
                     values: hosts
                 }
-            }
+            },
+            {
+				key: "overrideSiteUrl",
+				editTextPreference: {
+					title: "Domäne überschreiben",
+					summary: "Alternative Domains unter: https://serien.domains/",
+					value: "https://serienstream.to",
+					dialogTitle: "Domäne überschreiben",
+					dialogMessage: "",
+				},
+			},
         ];
     }
 }
