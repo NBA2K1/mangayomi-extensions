@@ -77,6 +77,7 @@ class DefaultExtension extends MProvider {
     cleanHtmlString(input) {
         if (!input) return "";
         return input
+            .replace(/&amp;/g, '&')
             .replace(/&lt;/g, '<')
             .replace(/&gt;/g, '>')
             .replace(/<br>/g, '\n')
