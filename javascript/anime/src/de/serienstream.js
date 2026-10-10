@@ -7,11 +7,11 @@ const mangayomiSources = [{
     "typeSource": "single",
     "itemType": 1,
     "isNsfw": false,
-    "version": "0.1.2",
+    "version": "0.1.3",
     "dateFormat": "",
     "dateFormatLocale": "",
     "pkgPath": "anime/src/de/serienstream.js",
-    "notes": "Funktioniert derzeit nicht!"
+    "notes": "Video streams funktionieren derzeit nicht!"
 }];
 
 class DefaultExtension extends MProvider {
@@ -31,45 +31,24 @@ class DefaultExtension extends MProvider {
 		);
 	}
     async getPopular(page) {
-        const document = await this.getSite("/beliebte-serien");
-        const elements = document.select("div.mb-5:nth-child(4) > div:nth-child(2) div");
-        const list = [];
-        for (const element of elements) {
-            const linkElement = element.selectFirst("a");
-            const img = linkElement.selectFirst("img");
-            const name = img.attr("alt");
-            let imageUrl = img.attr("data-src");
-            if (!imageUrl || imageUrl.trim() === "") {
-                imageUrl = img.attr("src");
-            }
-            imageUrl = this.siteBase + imageUrl;
-            const link = linkElement.attr("href") + "/staffel-1";
-            list.push({ name, imageUrl, link });
-        }
-        return {
-            list: list,
-            hasNextPage: false
-        }
+        return this._showList("div.mb-5:nth-child(4) > div:nth-child(2) div");
     }
     async getLatestUpdates(page) {
+        return this._showList("div.mb-5:nth-child(3) > div:nth-child(2) div");
+    }
+    async _showList(selector) {
         const document = await this.getSite("/beliebte-serien");
-        const elements = document.select("div.mb-5:nth-child(3) > div:nth-child(2) div");
         const list = [];
         const seen = new Set();
-        for (const element of elements) {
+        for (const element of document.select(selector)) {
             const linkElement = element.selectFirst("a");
             const img = linkElement.selectFirst("img");
             const name = img.attr("alt");
             // Skip duplicates
             if (seen.has(name)) continue;
             seen.add(name);
-            let imageUrl = img.attr("data-src");
-            if (!imageUrl || imageUrl.trim() === "") {
-                imageUrl = img.attr("src");
-            }
-            imageUrl = this.siteBase + imageUrl;
             const link = linkElement.attr("href") + "/staffel-1";
-            list.push({ name, imageUrl, link });
+            list.push({ name, imageUrl: this._coverUrl(element), link });
         }
         return {
             list: list,
@@ -77,31 +56,55 @@ class DefaultExtension extends MProvider {
         }
     }
     async search(query, page, filters) {
-        const elements = (await this.getSite("/serien"))
-            .select("ul.series-list li.series-item")
-            .filter(e => e.attr("data-search").trim().includes(query.toLowerCase()));
-        const list = [];
-        for (const element of elements) {
-            const linkElement = element.selectFirst("a");
-            const name = linkElement.text;
-            const link = linkElement.attr("href") + "/staffel-1";
-            const showDoc = await this.getSite(link);
-            const img = showDoc.selectFirst("div.col-3.col-md-3.col-lg-2.d-none.d-md-block img");
-            let imageUrl = img.attr("data-src");
-            if (!imageUrl || imageUrl.trim() === "") {
-                imageUrl = img.attr("src");
-            }
-            imageUrl = this.siteBase + imageUrl;
-            list.push({ name, imageUrl, link });
+        // The suggestions endpoint has no paging: everything is on page 1.
+        if (page > 1 || !query || !query.trim()) {
+            return { list: [], hasNextPage: false };
         }
-        return {
-            list: list,
-            hasNextPage: false
+        const data = await this.getJson(`/api/search/suggest?term=${encodeURIComponent(query.trim())}`);
+        // The response also has "people" and "genres"; only "shows" are series.
+        const shows = (data && data.shows) || [];
+        const list = await Promise.all(
+            shows.map(async (show) => ({
+                name: show.name,
+                link: show.url,
+                imageUrl: this._coverUrl(await this.getSite(show.url)),
+            }))
+        );
+        return { list, hasNextPage: false };
+    }
+    _coverUrl(scope, width = 768) {
+        const CHANNEL = "/media/images/channel/";
+        const srcsetOf = (el) => el.attr("data-srcset") || el.attr("srcset") || "";
+
+        let url = "";
+
+        const webp = scope
+            .select('picture source[type="image/webp"]')
+            .find((s) => srcsetOf(s).includes(CHANNEL));
+        if (webp) {
+            const entries = srcsetOf(webp)
+                .split(",")
+                .map((p) => p.trim().split(/\s+/))
+                .filter((p) => p[0])
+                .map((p) => ({ url: p[0], width: parseInt(p[1]) || 0 }));
+            const best = entries.find((e) => e.width === width) || entries[entries.length - 1];
+            url = best ? best.url : "";
         }
+
+        if (!url) {
+            const img = scope
+                .select("picture img")
+                .find((i) => (i.attr("data-src") || i.attr("src") || "").includes(CHANNEL));
+            if (img) url = img.attr("data-src") || img.attr("src");
+        }
+
+        if (!url) return "";
+        return url.startsWith("http") ? url : this.siteBase + url;
     }
     cleanHtmlString(input) {
       if (!input) return "";
       return input
+          .replace(/&amp;/g, '&')
           .replace(/&lt;/g, '<')
           .replace(/&gt;/g, '>')
           .replace(/<br>/g, '\n')
@@ -141,12 +144,7 @@ class DefaultExtension extends MProvider {
     }
     async getDetail(url) {
         const document = await this.getSite(url);
-        const img = document.selectFirst("div.col-3.col-md-3.col-lg-2.d-none.d-md-block img");
-        let imageUrl = img.attr("data-src");
-        if (!imageUrl || imageUrl.trim() === "") {
-            imageUrl = img.attr("src");
-        }
-        imageUrl = this.siteBase + imageUrl;
+        const imageUrl = this._coverUrl(document);
         const name = document.selectFirst("h1.h2.mb-1.fw-bold").text.trim();
         const genre = document.select("li.series-group:has(strong:contains(Genre)) a").map(e => e.text);
         const description = document.selectFirst("span.description-text").text;
@@ -223,13 +221,34 @@ class DefaultExtension extends MProvider {
     }
 
     async getSite(url) {
-        if (this.cache.has(url)) {
-            return this.cache.get(url);
-        }
-        const res = await this.client.get(this.siteBase + url);
+        const key = this._path(url);
+        if (this.cache.has(key)) return this.cache.get(key);
+        const res = await this._get(key);
+        if (!res) throw new Error(`Failed to load ${key}`);
         const doc = new Document(res.body);
-        this.cache.set(url, doc);
+        this.cache.set(key, doc);
         return doc;
+    }
+
+    async _get(url) {
+        const res = await this.client.get(this.siteBase + this._path(url));
+        if (res.statusCode !== 200) return null;
+        return res;
+    }
+
+    async getJson(url) {
+        try {
+            const res = await this._get(url);
+            return res ? JSON.parse(res.body) : null;
+        } catch (_) { 
+            return null;
+        }
+    }
+
+    _path(url) {
+        let path = String(url || "").trim().replace(/^https?:\/\/[^/]+/i, "");
+        if (!path.startsWith("/")) path = "/" + path;
+        return path;
     }
 
     parseEpisodeDate(dateString) {
@@ -285,9 +304,10 @@ class DefaultExtension extends MProvider {
 
     async getVideoList(url) {
         const baseUrl = this.siteBase;
-        const res = await this.client.get(baseUrl + url, {
+        const path = this._path(url);
+        const res = await this.client.get(baseUrl + path, {
             'Accept': '*/*',
-            'Referer': baseUrl + url,
+            'Referer': baseUrl + path,
             'Priority': 'u=0, i',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0'
         });
